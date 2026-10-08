@@ -89,7 +89,7 @@ hermes config set plugins.entries.discord-tps.settings.<key> <value>
 The hook carries `session_id`, so when you talk to the bot in more than one
 Discord thread the presence follows whichever session is currently active.
 Each new session gets its own tok/s window, and the most recently active one
-drives the display.
+drives the display. Only the 32 most recently active sessions are tracked.
 
 Model names are shortened for the presence line — the vendor prefix is
 dropped, so `stepfun/step-5-preview:free` renders as `step-5-preview:free`.

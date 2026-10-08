@@ -1,6 +1,6 @@
 name: discord-tps
 description: "Show live tokens-per-second and the active model on your Discord bot's presence."
-version: 1.0.0
+version: 1.0.1
 author: TunaCookie
 license: MIT
 manifest_version: 2
