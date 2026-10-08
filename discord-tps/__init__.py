@@ -10,16 +10,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections import OrderedDict, deque
 from typing import Any
 
 logger = logging.getLogger("hermes_plugins.discord_tps")
 
-# Rolling window of (output_tokens, api_duration) — matches agent/turn_usage.py.
+# Rolling window of (output_tokens, api_duration), like the Hermes status bar average.
 _WINDOW = 10
 _MAX_SESSIONS = 32
 _windows: OrderedDict[str, deque] = OrderedDict()  # session_id -> samples, LRU order
+_lock = threading.Lock()  # hooks can fire from concurrent agent threads
 # (tok/s, short model, seen) of the most recent call. Replaced in one assignment,
 # so the publisher on the bot's loop never reads state the hook is mutating.
 _latest: tuple[float, str, float] | None = None
@@ -37,13 +39,13 @@ def _on_post_api_request(**kwargs: Any) -> None:
         return  # failed/empty calls shouldn't steal the display
 
     sid = str(kwargs.get("session_id") or "default")
-    samples = _windows.setdefault(sid, deque(maxlen=_WINDOW))
-    _windows.move_to_end(sid)
-    if len(_windows) > _MAX_SESSIONS:
-        _windows.popitem(last=False)
-    samples.append((out, dur))
-
-    rate = sum(o for o, _ in samples) / sum(d for _, d in samples)
+    with _lock:
+        samples = _windows.setdefault(sid, deque(maxlen=_WINDOW))
+        _windows.move_to_end(sid)
+        if len(_windows) > _MAX_SESSIONS:
+            _windows.popitem(last=False)
+        samples.append((out, dur))
+        rate = sum(o for o, _ in samples) / sum(d for _, d in samples)
     # Drop the vendor prefix: 'stepfun/step-5-preview:free' -> 'step-5-preview:free'.
     model = str(kwargs.get("model") or (_latest[1] if _latest else "")).rsplit("/", 1)[-1]
     _latest = (rate, model, time.time())
@@ -100,7 +102,7 @@ def register(ctx: Any) -> None:
             return default
 
     cfg = {
-        "activity_type": get("activity_type", "playing"),
+        "activity_type": get("activity_type", "playing").strip().lower(),
         # Discord allows ~5 presence updates per 20s; don't go below 10s.
         "interval": max(10, get("interval", 20, int)),
         "idle_after": get("idle_after", 300, int),
