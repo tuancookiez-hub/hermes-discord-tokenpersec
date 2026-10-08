@@ -1,7 +1,7 @@
 # Submitted as plugin-catalog/discord-tps.yaml in NousResearch/hermes-agent.
 name: discord-tps
 repo: https://github.com/tuancookiez-hub/hermes-discord-tokenpersec
-sha: 97b743e582c70c60fe840b78643cd1a872f2323a
+sha: f16c8d7fb664bad6dd2186fb806937efca501286
 subdir: discord-tps
 description: Show live tokens-per-second and the active model on your Discord bot's presence.
 maintainer: TunaCookie
