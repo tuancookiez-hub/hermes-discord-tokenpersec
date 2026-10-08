@@ -1,0 +1,38 @@
+name: discord-tps
+description: "Show live tokens-per-second and the active model on your Discord bot's presence."
+version: 1.0.0
+author: TunaCookie
+license: MIT
+manifest_version: 2
+
+entry_point: __init__.py
+
+requires_hermes: ">=0.19"
+
+provides_hooks:
+  - post_api_request
+
+config_schema:
+  activity_type:
+    type: str
+    default: playing
+    description: "Discord activity verb: playing, listening, watching, competing, custom"
+  interval:
+    type: int
+    default: 20
+    description: "Seconds between presence refresh (Discord allows ~5 updates per 20s)"
+  idle_after:
+    type: int
+    default: 300
+    description: "Seconds of no API activity before presence shows the idle text"
+  idle_text:
+    type: str
+    default: "idle"
+    description: "Base text when idle_after elapses; the active model name is appended"
+
+capabilities:
+  provides_tools: []
+  provides_hooks:
+    - post_api_request
+  provides_middleware: []
+  requires_env: []
