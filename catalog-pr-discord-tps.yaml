@@ -1,0 +1,18 @@
+name: discord-tps
+repo: https://github.com/tuancookiez-hub/hermes-discord-tokenpersec
+sha: c1644769f262a6cf441651a8750f4f90efec89c8
+subdir: discord-tps
+version: "1.0.2"
+requires_hermes: ">=0.21"
+description: "Show live tokens-per-second and the active model on your Discord bot's presence."
+maintainer: TunaCookie
+tier: community
+category: platform
+docs_url: https://github.com/tuancookiez-hub/hermes-discord-tokenpersec/blob/c1644769f262a6cf441651a8750f4f90efec89c8/discord-tps/README.md
+readme: true
+capabilities:
+  provides_tools: []
+  provides_hooks:
+    - post_api_request
+  provides_middleware: []
+  requires_env: []
