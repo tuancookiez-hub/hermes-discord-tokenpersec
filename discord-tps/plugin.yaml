@@ -1,13 +1,11 @@
 name: discord-tps
 description: "Show live tokens-per-second and the active model on your Discord bot's presence."
-version: 1.0.0
+version: 1.0.1
 author: TunaCookie
 license: MIT
 manifest_version: 2
 
-entry_point: __init__.py
-
-requires_hermes: ">=0.19"
+requires_hermes: ">=0.21"
 
 provides_hooks:
   - post_api_request
@@ -20,7 +18,7 @@ config_schema:
   interval:
     type: int
     default: 20
-    description: "Seconds between presence refresh (Discord allows ~5 updates per 20s)"
+    description: "Seconds between presence refresh, minimum 10 (Discord allows ~5 updates per 20s)"
   idle_after:
     type: int
     default: 300

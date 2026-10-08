@@ -10,174 +10,113 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from typing import Any
 
 logger = logging.getLogger("hermes_plugins.discord_tps")
 
-# Rolling window of (output_tokens, api_duration) — matches agent/turn_usage.py.
+# Rolling window of (output_tokens, api_duration), like the Hermes status bar average.
 _WINDOW = 10
-_sessions: dict[str, dict] = {}  # session_id -> {samples, model, seen, label}
-_publishers: dict[int, Any] = {}
-
-
-def _cfg(ctx: Any, key: str, default: Any) -> Any:
-    try:
-        return ctx.get_config(key, default)
-    except Exception:
-        return default
-
-
-def _short_model(model: str) -> str:
-    """Drop the vendor prefix: 'stepfun/step-5-preview:free' -> 'step-5-preview:free'."""
-    return model.split("/")[-1] if model else ""
-
-
-def _slot(sid: str) -> dict:
-    s = _sessions.get(sid)
-    if s is None:
-        s = {"samples": deque(maxlen=_WINDOW), "model": "", "seen": 0.0, "label": f"S{len(_sessions) + 1}"}
-        _sessions[sid] = s
-    return s
-
-
-def _tok_per_sec(samples: deque) -> float:
-    if not samples:
-        return 0.0
-    out = sum(x[0] for x in samples)
-    dur = sum(x[1] for x in samples)
-    return out / dur if dur > 0 else 0.0
-
-
-def _active() -> dict | None:
-    """The most recently active session."""
-    if not _sessions:
-        return None
-    return max(_sessions.values(), key=lambda s: s["seen"])
-
-
-def _text(s: dict | None, idle_after: int, idle_base: str) -> str:
-    if s is None or time.time() - s["seen"] > idle_after:
-        model = _short_model(s["model"]) if s else ""
-        base = idle_base or "idle"
-        return f"{base} · {model}" if model else base
-    return f"{_tok_per_sec(s['samples']):.0f} tok/s · {_short_model(s['model'])}"
+_MAX_SESSIONS = 32
+_windows: OrderedDict[str, deque] = OrderedDict()  # session_id -> samples, LRU order
+_lock = threading.Lock()  # hooks can fire from concurrent agent threads
+# (tok/s, short model, seen) of the most recent call. Replaced in one assignment,
+# so the publisher on the bot's loop never reads state the hook is mutating.
+_latest: tuple[float, str, float] | None = None
 
 
 # ── hook ────────────────────────────────────────────────────────────────────
 
 
 def _on_post_api_request(**kwargs: Any) -> None:
-    usage = kwargs.get("usage") if isinstance(kwargs.get("usage"), dict) else {}
-    out = float(usage.get("output_tokens") or 0)
+    global _latest
+    usage = kwargs.get("usage")
+    out = float((usage.get("output_tokens") if isinstance(usage, dict) else 0) or 0)
     dur = float(kwargs.get("api_duration") or 0)
-    s = _slot(str(kwargs.get("session_id") or "default"))
-    if out > 0 and dur > 0:
-        s["samples"].append((out, dur))
-    s["model"] = str(kwargs.get("model") or s["model"])
-    s["seen"] = time.time()
+    if out <= 0 or dur <= 0:
+        return  # failed/empty calls shouldn't steal the display
+
+    sid = str(kwargs.get("session_id") or "default")
+    with _lock:
+        samples = _windows.setdefault(sid, deque(maxlen=_WINDOW))
+        _windows.move_to_end(sid)
+        if len(_windows) > _MAX_SESSIONS:
+            _windows.popitem(last=False)
+        samples.append((out, dur))
+        rate = sum(o for o, _ in samples) / sum(d for _, d in samples)
+    # Drop the vendor prefix: 'stepfun/step-5-preview:free' -> 'step-5-preview:free'.
+    model = str(kwargs.get("model") or (_latest[1] if _latest else "")).rsplit("/", 1)[-1]
+    _latest = (rate, model, time.time())
+
+
+def _presence_text(idle_after: int, idle_text: str) -> str:
+    if _latest is None:
+        return idle_text
+    rate, model, seen = _latest
+    if time.time() - seen > idle_after:
+        return f"{idle_text} · {model}" if model else idle_text
+    return f"{rate:.0f} tok/s · {model}"
 
 
 # ── presence publisher (runs on the gateway bot's own event loop) ───────────
 
 
-class _Publisher:
-    def __init__(self, bot: Any, cfg: dict) -> None:
-        self.bot = bot
-        self.cfg = cfg
-        self.task: asyncio.Task | None = None
-        self.stopped = asyncio.Event()
-        self.last = ""
+async def _publish(bot: Any, cfg: dict) -> None:
+    import discord
 
-    def start(self) -> None:
-        if self.task and not self.task.done():
-            return
-        loop = getattr(self.bot, "loop", None) or asyncio.get_event_loop()
-        self.task = loop.create_task(self._run())
+    try:
+        await bot.wait_until_ready()
+    except Exception as exc:
+        logger.debug("discord-tps: never became ready: %s", exc)
+        return
 
-    def stop(self) -> None:
-        self.stopped.set()
-        if self.task and not self.task.done():
-            self.task.cancel()
+    if cfg["activity_type"] == "custom":
+        make = lambda text: discord.CustomActivity(name=text)  # noqa: E731
+    else:
+        atype = getattr(discord.ActivityType, cfg["activity_type"], discord.ActivityType.playing)
+        make = lambda text: discord.Activity(type=atype, name=text)  # noqa: E731
 
-    async def _run(self) -> None:
-        ready = getattr(self.bot, "wait_until_ready", None)
-        if ready is not None:
-            try:
-                await ready()
-            except Exception as exc:
-                logger.debug("discord-tps: never became ready: %s", exc)
-                return
-        interval = max(10, int(self.cfg.get("interval", 20)))
-        while not self.stopped.is_set():
-            try:
-                await self._tick()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.warning("discord-tps: presence update failed: %s", exc)
-            try:
-                await asyncio.wait_for(self.stopped.wait(), timeout=interval)
-            except TimeoutError:
-                continue
-            except asyncio.CancelledError:
-                raise
-
-    def _text(self) -> str:
-        return _text(
-            _active(),
-            int(self.cfg.get("idle_after", 300)),
-            self.cfg.get("idle_text") or "idle",
-        )
-
-    async def _tick(self) -> None:
-        text = self._text()
-        if text == self.last:
-            return
-        closed = getattr(self.bot, "is_closed", None)
-        if callable(closed) and self.bot.is_closed():
-            self.stopped.set()
-            return
-        import discord
-
-        kind = str(self.cfg.get("activity_type", "playing"))
-        if kind == "custom":
-            activity = discord.CustomActivity(name=text)
-        else:
-            atype = getattr(discord.ActivityType, kind, discord.ActivityType.playing)
-            activity = discord.Activity(type=atype, name=text[:128])
-        await self.bot.change_presence(activity=activity)
-        self.last = text
-
-
-def _wire(bot: Any, adapter: Any, cfg: dict) -> None:
-    key = id(bot)
-    existing = _publishers.get(key)
-    if existing is not None:
-        if existing.task and not existing.task.done():
-            return
-        existing.stop()
-    pub = _Publisher(bot, cfg)
-    _publishers[key] = pub
-    pub.start()
-    logger.info("discord-tps: publishing tok/s + model every %ss", cfg.get("interval", 20))
+    last = None
+    while not bot.is_closed():
+        try:
+            text = _presence_text(cfg["idle_after"], cfg["idle_text"])[:128]
+            if text != last:
+                await bot.change_presence(activity=make(text))
+                last = text
+        except Exception as exc:
+            logger.warning("discord-tps: presence update failed: %s", exc)
+        await asyncio.sleep(cfg["interval"])
 
 
 # ── registration ─────────────────────────────────────────────────────────────
 
 
 def register(ctx: Any) -> None:
+    def get(key: str, default: Any, cast: type = str) -> Any:
+        try:
+            return cast(ctx.get_config(key, default))
+        except Exception:
+            logger.warning("discord-tps: bad or unreadable %s, using %r", key, default)
+            return default
+
     cfg = {
-        "activity_type": _cfg(ctx, "activity_type", "playing"),
-        "interval": _cfg(ctx, "interval", 20),
-        "idle_after": _cfg(ctx, "idle_after", 300),
-        "idle_text": _cfg(ctx, "idle_text", "idle"),
+        "activity_type": get("activity_type", "playing").strip().lower(),
+        # Discord allows ~5 presence updates per 20s; don't go below 10s.
+        "interval": max(10, get("interval", 20, int)),
+        "idle_after": get("idle_after", 300, int),
+        "idle_text": get("idle_text", "idle") or "idle",
     }
     ctx.register_hook("post_api_request", _on_post_api_request)
 
-    def _wire_discord(bot: Any, adapter: Any) -> None:
-        _wire(bot, adapter, cfg)
+    def wire(bot: Any, adapter: Any) -> None:
+        task = getattr(bot, "_discord_tps_task", None)
+        if task is not None and not task.done():
+            return
+        loop = getattr(bot, "loop", None) or asyncio.get_event_loop()
+        bot._discord_tps_task = loop.create_task(_publish(bot, cfg))
+        logger.info("discord-tps: publishing tok/s + model every %ss", cfg["interval"])
 
-    ctx.register_platform_handler("discord", _wire_discord)
+    ctx.register_platform_handler("discord", wire)
     logger.info("discord-tps: armed (%s, every %ss)", cfg["activity_type"], cfg["interval"])
