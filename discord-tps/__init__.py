@@ -102,7 +102,7 @@ def register(ctx: Any) -> None:
             return default
 
     cfg = {
-        "activity_type": get("activity_type", "playing").strip().lower(),
+        "activity_type": get("activity_type", "custom").strip().lower(),
         # Discord allows ~5 presence updates per 20s; don't go below 10s.
         "interval": max(10, get("interval", 20, int)),
         "idle_after": get("idle_after", 300, int),

@@ -1,6 +1,6 @@
 name: discord-tps
 description: "Show live tokens-per-second and the active model on your Discord bot's presence."
-version: 1.0.1
+version: 1.0.2
 author: TunaCookie
 license: MIT
 manifest_version: 2
@@ -13,7 +13,7 @@ provides_hooks:
 config_schema:
   activity_type:
     type: str
-    default: playing
+    default: custom
     description: "Discord activity verb: playing, listening, watching, competing, custom"
   interval:
     type: int

@@ -9,7 +9,7 @@ tier: community
 category: platform
 requires_hermes: ">=0.21"
 docs_url: https://github.com/tuancookiez-hub/hermes-discord-tokenpersec/tree/main/discord-tps
-version: "1.0.1"
+version: "1.0.2"
 readme: true
 title: Discord tok/s
 capabilities:

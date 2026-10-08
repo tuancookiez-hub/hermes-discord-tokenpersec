@@ -14,14 +14,14 @@ While the agent is working:
 
 ```
 Hermes
-Playing 64 tok/s · step-5-preview:free
+64 tok/s · step-5-preview:free
 ```
 
 After five minutes of no API activity:
 
 ```
 Hermes
-Playing idle · step-5-preview:free
+idle · step-5-preview:free
 ```
 
 ## How it works
@@ -70,20 +70,20 @@ hermes config set plugins.entries.discord-tps.settings.<key> <value>
 
 | Key | Default | Meaning |
 |---|---|---|
-| `activity_type` | `playing` | `playing`, `listening`, `watching`, `competing`, or `custom` |
+| `activity_type` | `custom` | `playing`, `listening`, `watching`, `competing`, or `custom` |
 | `interval` | `20` | Seconds between refreshes (minimum 10). Discord allows ~5 updates per 20s. |
 | `idle_after` | `300` | Seconds of inactivity before the idle text shows. |
 | `idle_text` | `idle` | Base idle text; the active model name is appended once one has been seen. |
 
 ### Activity types
 
-`activity_type` picks the verb Discord renders:
+`activity_type` picks the verb Discord renders (default `custom`, no verb):
 
 - `playing` → `Playing 64 tok/s · step-5-preview:free`
 - `listening` → `Listening to 64 tok/s · …`
 - `watching` → `Watching 64 tok/s · …`
 - `competing` → `Competing in 64 tok/s · …`
-- `custom` → bare text with no verb (Discord custom status)
+- `custom` → `64 tok/s · step-5-preview:free` (Discord custom status, no verb)
 
 ## Multiple sessions
 
