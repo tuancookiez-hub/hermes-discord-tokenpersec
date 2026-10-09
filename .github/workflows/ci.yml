@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Hermes release whose catalog gates we mirror. Bump alongside requires_hermes.
+  HERMES_REF: v0.21.6
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # check_entry.py needs history to resolve the pinned sha
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # oldest Python Hermes supports
+      - run: pip install pytest==8.4.2 pyyaml==6.0.3 ruff==0.14.0
+      - name: Lint
+        run: ruff check discord-tps tests ci
+      - name: Unit tests
+        run: pytest -q tests
+      - name: Catalog entry matches plugin.yaml and pinned sha
+        run: python ci/check_entry.py
+
+  catalog-gates:
+    # The same two gates NousResearch/hermes-agent's Plugin Catalog CI runs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out Hermes ${{ env.HERMES_REF }}
+        uses: actions/checkout@v4
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ env.HERMES_REF }}
+          path: .hermes
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Hermes dependencies
+        working-directory: .hermes
+        run: |
+          uv venv -p 3.14 ../.venv
+          uv pip install -p ../.venv/bin/python -r pyproject.toml
+      - name: Structural catalog check
+        run: |
+          mkdir -p "$RUNNER_TEMP/catalog"
+          cp plugin-catalog-entry.yaml "$RUNNER_TEMP/catalog/discord-tps.yaml"
+          cd .hermes && ../.venv/bin/python scripts/validate_plugin_catalog.py "$RUNNER_TEMP/catalog/"
+      - name: hermes plugins validate
+        working-directory: .hermes
+        run: |
+          ../.venv/bin/python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+          from hermes_cli.plugin_validate import validate_plugin_dir
+
+          report = validate_plugin_dir(Path("../discord-tps").resolve()).to_dict()
+          for c in report["checks"]:
+              print(("ok  " if c["ok"] else "FAIL") + f"  {c['name']}: {c['detail']}")
+          for w in report["warnings"]:
+              print(f"::warning::{w}")
+          sys.exit(0 if report["ok"] else 1)
+          EOF

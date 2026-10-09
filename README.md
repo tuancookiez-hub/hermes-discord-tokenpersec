@@ -24,6 +24,13 @@ hermes plugins install tuancookiez-hub/hermes-discord-tokenpersec --subdir disco
 hermes plugins validate ./discord-tps --install-deps
 ```
 
+## CI
+
+`.github/workflows/ci.yml` runs on every push and PR:
+
+- **test**: ruff, the unit tests in `tests/`, and `ci/check_entry.py`, which checks that the catalog entry matches `plugin.yaml` and pins a reachable commit with no plugin changes after it.
+- **catalog-gates**: the same two gates as Hermes' Plugin Catalog CI, run from a Hermes checkout (`HERMES_REF`): the structural entry check and `hermes plugins validate`'s admission checks.
+
 ## Catalog submission
 
 `plugin-catalog-entry.yaml` is the entry submitted as `plugin-catalog/discord-tps.yaml`
