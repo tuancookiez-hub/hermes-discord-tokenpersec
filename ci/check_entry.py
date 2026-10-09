@@ -2,7 +2,8 @@
 
 - sha is a full 40-char commit that is an ancestor of HEAD (reachable once merged)
 - the plugin dir is unchanged between the pinned sha and HEAD (pin isn't stale)
-- name, version, requires_hermes, description and capabilities match the manifest
+- name, version, requires_hermes and capabilities match the manifest
+  (description may differ: the catalog adds a risk disclosure)
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ elif git("merge-base", "--is-ancestor", sha, "HEAD").returncode != 0:
 elif git("diff", "--quiet", sha, "HEAD", "--", entry["subdir"]).returncode != 0:
     errors.append(f"{entry['subdir']}/ changed after pinned sha {sha}; re-pin and bump version")
 
-for key in ("name", "version", "requires_hermes", "description"):
+for key in ("name", "version", "requires_hermes"):
     if str(entry.get(key)) != str(manifest.get(key)):
         errors.append(f"{key}: entry {entry.get(key)!r} != plugin.yaml {manifest.get(key)!r}")
 
