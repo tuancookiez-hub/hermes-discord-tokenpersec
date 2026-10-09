@@ -18,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # check_entry.py needs history to resolve the pinned sha
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11" # oldest Python Hermes supports
       - run: pip install pytest==8.4.2 pyyaml==6.0.3 ruff==0.14.0
@@ -37,30 +37,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check out Hermes ${{ env.HERMES_REF }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: NousResearch/hermes-agent
           ref: ${{ env.HERMES_REF }}
           path: .hermes
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - name: Install Hermes dependencies
         working-directory: .hermes
         run: |
-          uv venv -p 3.14 ../.venv
-          uv pip install -p ../.venv/bin/python -r pyproject.toml
+          uv venv -p 3.14 "$GITHUB_WORKSPACE/.venv"
+          uv pip install -p "$GITHUB_WORKSPACE/.venv/bin/python" -r pyproject.toml
       - name: Structural catalog check
         run: |
           mkdir -p "$RUNNER_TEMP/catalog"
           cp plugin-catalog-entry.yaml "$RUNNER_TEMP/catalog/discord-tps.yaml"
-          cd .hermes && ../.venv/bin/python scripts/validate_plugin_catalog.py "$RUNNER_TEMP/catalog/"
+          cd .hermes && "$GITHUB_WORKSPACE/.venv/bin/python" scripts/validate_plugin_catalog.py "$RUNNER_TEMP/catalog/"
       - name: hermes plugins validate
         working-directory: .hermes
         run: |
-          ../.venv/bin/python - <<'EOF'
-          import json, sys
+          "$GITHUB_WORKSPACE/.venv/bin/python" - <<'EOF'
+          import sys
           from pathlib import Path
           from hermes_cli.plugin_validate import validate_plugin_dir
 
